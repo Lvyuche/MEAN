@@ -1,30 +1,64 @@
 const express = require('express');
+const multer = require('multer');
 
 const Post = require('../models/post');
 
 const router = express.Router();
 
-router.post('', (req, res, next) => {
+const MIME_TYPE_MAP = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg'
+};
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const isValid = MIME_TYPE_MAP[file.mimetype];
+        let error = new Error('Invalid mime type');
+        if (isValid) {
+            error = null;
+        }
+        cb(error, '../backend/images');
+    },
+    filename: (req, file, cb) => {
+        const name = file.originalname.toLowerCase().split(' ').join('-');
+        const ext = MIME_TYPE_MAP[file.mimetype];
+        cb(null, name + '-' + Date.now() + '.' + ext);
+    }
+});
+
+router.post('', multer({storage: storage}).single("image"), (req, res, next) => {
     const post = new Post({
         title: req.body.title,
-        content: req.body.content
+        content: req.body.content,
+        imagePath: req.protocol + '://' + req.get('host') + '/images/' + req.file.filename
     });
     post.save().then(createdPost => {
         res.status(201).json({
-            postId: createdPost._id,
-            message: 'Post added successfully'
+            message: 'Post added successfully',
+            post: {
+                ...createdPost,
+                id: createdPost._id
+            }
         });
     });
 });
 
-router.put('/:id', (req, res, next) => {
-    const post = new Post({
-        _id: req.body.id,
+router.put('/:id', multer({storage: storage}).single("image"), (req, res, next) => {
+    let imagePath = req.body.imagePath;
+    console.log(req.body);
+    if (req.file) {
+        const url = req.protocol + '://' + req.get('host');
+        imagePath = url + '/images/' + req.file.filename;
+        console.log("backend: " + imagePath);
+    }
+
+    Post.updateOne({_id: req.params.id}, { $set: {
+        id: req.body.id,    
         title: req.body.title,
-        content: req.body.content
-    });
-    Post.updateOne({_id: req.params.id}, post).then(result => {
-        console.log(result);
+        content: req.body.content,
+        imagePath: imagePath
+    }}).then(result => {
         res.status(200).json({
             message: 'Update successful!'
         });
